@@ -1,0 +1,7 @@
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\bin\Debug\VMWareChatter.dll
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\bin\Debug\VMWareChatter.pdb
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\bin\Debug\VMware.Vim.dll
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\bin\Debug\VMware.VimAutomation.Logging.SoapInterceptor.dll
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\obj\Debug\VMWareChatter.csprojResolveAssemblyReference.cache
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\obj\Debug\VMWareChatter.dll
+C:\TFS-PnDAUTDevMntSupport\PnDAUTDevMntSupport\HistoricStation\2.1.0\Custom Code\VMWareChatter\VMWareChatter\obj\Debug\VMWareChatter.pdb
