@@ -328,6 +328,70 @@ namespace VMWareChatter {
          return hostSystems;
       }
       /// <summary>
+      /// Downloads a file from a datastore
+      /// </summary>
+      /// <param name="hostName">Name of host</param>
+      /// <param name="dataStoreName">datastore</param>
+      /// <param name="path">[datastore] /folder/file.txt</param>
+      public void DownloadDataStoreFile(string hostName, string dataStoreName, string path) {
+         throw new NotImplementedException();
+         //Does not download, only moves or copies files within datastore(s)
+         //https://www.vmware.com/support/developer/vc-sdk/visdk25pubs/ReferenceGuide/vim.FileManager.html
+      }
+      /// <summary>
+      /// Finds files we search for
+      /// </summary>
+      /// <param name="hostName">The host we want to fetch from</param>
+      /// <param name="dataStoreName">The datastore we want to fetch</param>
+      /// <param name="path">The path to search of type: [datastore] /folder/file</param>
+      /// <returns>List of paths</returns>
+      public String[] SearchDatastoreForFile(string hostName, string dataStoreName, string path) {
+         Datastore ds = this.GetHostDatastore(hostName, dataStoreName);
+         HostDatastoreBrowser hdsb = (HostDatastoreBrowser)vSphereClient.GetView(ds.Browser, null);
+         FileQueryFlags fqf = new FileQueryFlags() { FileOwner = false, FileSize = true, FileType = false, Modification = true };
+
+         HostDatastoreBrowserSearchSpec searchSpec = new HostDatastoreBrowserSearchSpec() {
+            SearchCaseInsensitive = true,
+            Query = new FileQuery[] {
+               new FolderFileQuery() { }
+            },
+            Details = fqf,
+            SortFoldersFirst = false,
+         };
+         HostDatastoreBrowserSearchResults hdbsr = hdsb.SearchDatastore(path, searchSpec);
+         return hdbsr.File.AsParallel<VMware.Vim.FileInfo>().Select(file => file.Path).ToArray();
+      }
+      /// <summary>
+      /// Fetches a specified datastore from a VMWare ESXi host
+      /// </summary>
+      /// <param name="hostName">The host we want to fetch from</param>
+      /// <param name="dataStoreName">The datastore we want to fetch of type: [datastore] /folder/file</param>
+      /// <returns>The datastore we want</returns>
+      public Datastore GetHostDatastore(string hostName, string dataStoreName) {
+         HostSystem theHost = this.GetHostSystems().Where(host => host.Name == hostName).FirstOrDefault();
+         foreach (ManagedObjectReference mob in theHost.Datastore) {
+            Datastore currentDatastore = (Datastore)vSphereClient.GetView(mob, null);
+            if (currentDatastore.Name.ToLower() == dataStoreName.ToLower()) {
+               return currentDatastore;
+            }
+         }
+         return null;     
+      }
+      /// <summary>
+      /// Fetches all datastores from a VMWare ESXi host
+      /// </summary>
+      /// <param name="hostName">The host we want to fetch from</param>
+      /// <returns>List of all the datastores</returns>
+      public List<Datastore> GetHostDatastores(string hostName) {
+         List<Datastore> datastores = new List<Datastore>();
+         HostSystem theHost = this.GetHostSystems().Where(host => host.Name == hostName).FirstOrDefault();
+         foreach (ManagedObjectReference mob in theHost.Datastore) {
+            Datastore currentDatastore = (Datastore)vSphereClient.GetView(mob, null);
+            datastores.Add(currentDatastore);
+         }
+         return datastores;
+      }
+      /// <summary>
       /// Check if a license feature is present. 
       /// </summary>
       /// <param name="featureName">Name of the feature</param>
