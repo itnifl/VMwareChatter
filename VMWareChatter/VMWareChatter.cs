@@ -67,6 +67,9 @@ namespace VMWareChatter {
          byte[] info = new UTF8Encoding(true).GetBytes(value);
          fs.Write(info, 0, info.Length);
       }
+      public void ShutdownAllHosts() {
+         this.GetHostSystems().ForEach(host => host.ShutdownHost(true));
+      }
       /// <summary>
       /// Get a list of wrappers that sum up information about the virtual machines we are looking for
       /// </summary>
@@ -114,7 +117,7 @@ namespace VMWareChatter {
       /// <summary>
       /// Get a wrapper that sums up information about the virtual machine we are looking for
       /// </summary>
-      /// <param name="guestNameFilter">The selected VM to finf</param>
+      /// <param name="guestNameFilter">The selected VM to find</param>
       /// <returns></returns>
       public VirtualMachineWrapper GetVirtualMachine(String guestNameFilter) {
          if (String.IsNullOrEmpty(guestNameFilter)) {
@@ -132,7 +135,7 @@ namespace VMWareChatter {
             }
          }
          GuestDiskInfoWrapper[] guestDisks = null;
-         if (vm.Guest.Disk != null) {
+         if (vm != null && vm.Guest != null && vm.Guest.Disk != null) {
             guestDisks = vm.Guest.Disk.Where(disk => disk != null).Select(disk => (GuestDiskInfoWrapper)disk).ToArray();
          }
          return vm != null ? new VirtualMachineWrapper() {
@@ -211,6 +214,40 @@ namespace VMWareChatter {
             }
             else {
                vm.PowerOffVM();
+            }
+         }
+         catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+      }
+      /// <summary>
+      /// Sets a new powerstate via the VMware toold and the OS
+      /// </summary>
+      /// <param name="guestNameFilter">The guest to power on or off via OS</param>
+      /// <param name="powerState">True to power on, false to power off</param>
+      public void SetVMGuestOSPowerState(String guestNameFilter, bool powerState) {
+         var filter = new NameValueCollection();
+         filter.Add("name", guestNameFilter);
+         VirtualMachine vm = null;
+         try {
+            vm = (VirtualMachine)vSphereClient.FindEntityView(typeof(VirtualMachine), null, filter, null);
+         }
+         catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         try {
+            if (powerState) {
+               HostSystem host = GetHostSystems().FirstOrDefault();
+               if (host != null) {
+                  vm.PowerOnVM_Task(host.MoRef);
+               }
+            }
+            else {
+               vm.ShutdownGuest();
             }
          }
          catch (Exception e) {
