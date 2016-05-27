@@ -73,17 +73,18 @@ namespace VMWareChatter {
       /// <summary>
       /// Get a list of wrappers that sum up information about the virtual machines we are looking for
       /// </summary>
-      /// <param name="guestNameFilter">The selected VM name filter to find</param>
+      /// <param name="guestNameFilter">The selected VM name filter to find, empty filer means all</param>
       /// <returns></returns>
       public List<VirtualMachineWrapper> GetVirtualMachines(String guestNameFilter) {
-         if (String.IsNullOrEmpty(guestNameFilter)) {
+         /*if (String.IsNullOrEmpty(guestNameFilter)) {
             return new List<VirtualMachineWrapper>();
-         }
+         }*/
          var filter = new NameValueCollection();
-         filter.Add("name", guestNameFilter);
+         if(!String.IsNullOrEmpty(guestNameFilter))
+            filter.Add("name", guestNameFilter);
          List<VirtualMachine> vms = new List<VirtualMachine>();
          try {
-            vSphereClient.FindEntityViews(typeof(VirtualMachine), null, filter, null).ForEach(vm => vms.Add((VirtualMachine)vm));
+            vSphereClient.FindEntityViews(typeof(VirtualMachine), null, (!String.IsNullOrEmpty(guestNameFilter) ? filter : null), null).ForEach(vm => vms.Add((VirtualMachine)vm));
          }
          catch (Exception e) {
             lock (m_lock) {
@@ -554,6 +555,12 @@ namespace VMWareChatter {
       public bool PowerState { get; set; }
       public string IpAddress { get; set; }
       public string HostName { get; set; }
+      /// <summary>
+      /// Possible values are:
+      /// guestToolsExecutingScripts - VMware Tools is starting. 
+      /// guestToolsNotRunning - VMware Tools is not running.
+      /// guestToolsRunning - VMware Tools is running.
+      /// </summary>
       public string ToolsRunningStatus { get; set; }
       public string ToolsVersionStatus { get; set; }
       public int? NumCpu { get; set; }
