@@ -6,6 +6,7 @@ using System.Collections.Specialized;
 using VMware.Vim;
 using System.Security;
 using System.IO;
+using System.Reflection;
 
 /*  Requires namespace VMware.Vim
  *  Requires VMware.Vim.dll
@@ -20,6 +21,15 @@ namespace VMWareChatter {
       public static object m_lock = "";
       private string m_UserNameUsed;
       private SecureString m_PasswordUsed;
+
+      public static string AssemblyDirectory {
+         get {
+            string codeBase = Assembly.GetExecutingAssembly().CodeBase;
+            UriBuilder uri = new UriBuilder(codeBase);
+            string path = Uri.UnescapeDataString(uri.Path);
+            return Path.GetDirectoryName(path);
+         }
+      }
       /// <summary>
       /// Used to talk to and automate an ESXi environment
       /// </summary>
@@ -29,7 +39,7 @@ namespace VMWareChatter {
       /// <param name="domain">Domain as part of needed credential for access</param>
       public vCenterCommunicator(String hostName, String userName, SecureString password, String domain) {
          lock (m_lock) {
-            logWriter = new FileStream(Path.Combine(Directory.GetCurrentDirectory(), "VMWareChatter-CrashLogs.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            logWriter = new FileStream(Path.Combine(vCenterCommunicator.AssemblyDirectory, "VMWareChatter-CrashLogs.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
          }
          try {
             //Fetch information and collect them in a representative object:
