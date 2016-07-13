@@ -154,6 +154,6 @@ $RECYCLE.BIN/
 #VS2012 Temporary Files
 TemporaryGeneratedFile*
 
-#Do not ignore this folder:
-!Resources/
+#Do not ignore ddl's in this folder:
+!Resources/*.dll
 
