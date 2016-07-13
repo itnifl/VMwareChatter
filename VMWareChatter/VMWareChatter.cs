@@ -4,19 +4,25 @@ using System.Linq;
 using System.Text;
 using System.Collections.Specialized;
 using VMware.Vim;
+//using VMware.Vim.Client;
 using System.Security;
 using System.IO;
 using System.Reflection;
+using System.Web.Services.Protocols;
+using System.Web.Services;
+using Microsoft.Web.Services3;
 
-/*  Requires namespace VMware.Vim
+/*  Requires namespace VMware.Vim and VimApi
  *  Requires VMware.Vim.dll
  *  Requires VMware.VimAutomation.Logging.SoapInterceptor.dll
+ *  Requires Vim25Service.dll
  */
 namespace VMWareChatter {
    public class vCenterCommunicator : IDisposable {
-      VimClient vSphereClient = new VimClient();
-      ServiceContent vConnection = null;
-      UserSession thisSession = null;
+      VMware.Vim.VimClient vSphereClient = new VMware.Vim.VimClient();
+      VMware.Vim.ServiceContent vConnection = null;
+      VMware.Vim.UserSession thisSession = null;
+      VimApiAccess vimApiAccess = null;
       FileStream logWriter = null;
       public static object m_lock = "";
       private string m_UserNameUsed;
@@ -46,6 +52,8 @@ namespace VMWareChatter {
             vConnection = vSphereClient.Connect("https://" + hostName + "/sdk");
             if (!String.IsNullOrEmpty(domain)) userName = domain + "\\" + userName;
             thisSession = vSphereClient.Login(userName, System.Runtime.InteropServices.Marshal.PtrToStringAuto(System.Runtime.InteropServices.Marshal.SecureStringToBSTR(password)));
+            vimApiAccess = new VimApiAccess(vConnection);
+            vimApiAccess.Connect("https://" + hostName + "/sdk", userName, System.Runtime.InteropServices.Marshal.PtrToStringAuto(System.Runtime.InteropServices.Marshal.SecureStringToBSTR(password)));
          }
          catch (Exception ex) {
             lock (m_lock) {
@@ -67,6 +75,7 @@ namespace VMWareChatter {
                logWriter.Close();
                logWriter.Dispose();
             }
+            vimApiAccess.Disconnect();
          }
          catch {
             //Do nothing
@@ -92,9 +101,9 @@ namespace VMWareChatter {
          var filter = new NameValueCollection();
          if(!String.IsNullOrEmpty(guestNameFilter))
             filter.Add("name", guestNameFilter);
-         List<VirtualMachine> vms = new List<VirtualMachine>();
+         List<VMware.Vim.VirtualMachine> vms = new List<VMware.Vim.VirtualMachine>();
          try {
-            vSphereClient.FindEntityViews(typeof(VirtualMachine), null, (!String.IsNullOrEmpty(guestNameFilter) ? filter : null), null).ForEach(vm => vms.Add((VirtualMachine)vm));
+            vSphereClient.FindEntityViews(typeof(VMware.Vim.VirtualMachine), null, (!String.IsNullOrEmpty(guestNameFilter) ? filter : null), null).ForEach(vm => vms.Add((VMware.Vim.VirtualMachine)vm));
          }
          catch (Exception e) {
             lock (m_lock) {
@@ -110,7 +119,7 @@ namespace VMWareChatter {
             virtualMachineWrappers.Add(
                new VirtualMachineWrapper() {
                   NumMksConnections = vm.Summary.Runtime.NumMksConnections,
-                  PowerState = vm.Summary.Runtime.PowerState == VirtualMachinePowerState.poweredOn,
+                  PowerState = vm.Summary.Runtime.PowerState == VMware.Vim.VirtualMachinePowerState.poweredOn,
                   IpAddress = String.IsNullOrEmpty(vm.Summary.Guest.IpAddress) ? String.Empty : vm.Summary.Guest.IpAddress,
                   HostName = String.IsNullOrEmpty(vm.Summary.Guest.HostName) ? String.Empty : vm.Summary.Guest.HostName,
                   ToolsRunningStatus = String.IsNullOrEmpty(vm.Summary.Guest.ToolsRunningStatus) ? String.Empty : vm.Summary.Guest.ToolsRunningStatus,
@@ -151,7 +160,7 @@ namespace VMWareChatter {
          }
          return vm != null ? new VirtualMachineWrapper() {
             NumMksConnections = vm.Summary.Runtime.NumMksConnections,
-            PowerState = vm.Summary.Runtime.PowerState == VirtualMachinePowerState.poweredOn,
+            PowerState = vm.Summary.Runtime.PowerState == VMware.Vim.VirtualMachinePowerState.poweredOn,
             IpAddress = String.IsNullOrEmpty(vm.Summary.Guest.IpAddress) ? String.Empty : vm.Summary.Guest.IpAddress,
             HostName = String.IsNullOrEmpty(vm.Summary.Guest.HostName) ? String.Empty : vm.Summary.Guest.HostName,
             ToolsRunningStatus = String.IsNullOrEmpty(vm.Summary.Guest.ToolsRunningStatus) ? String.Empty : vm.Summary.Guest.ToolsRunningStatus,
@@ -162,6 +171,22 @@ namespace VMWareChatter {
             NumVirtualDisks = vm.Summary.Config.NumVirtualDisks,
             Disk = guestDisks
          } : new VirtualMachineWrapper();
+      }
+      private List<VirtualMachine> GetVirtualMachines() {
+         List<EntityViewBase> entityViews = null;
+         List<VirtualMachine> vms = new List<VirtualMachine>();
+         try {
+            entityViews = vSphereClient.FindEntityViews(typeof(VirtualMachine), null, null, null).ToList();
+            foreach (EntityViewBase ent in entityViews) {
+               vms.Add((VirtualMachine)ent);
+            }
+         }
+         catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         return vms;
       }
       /// <summary>
       /// Get number of console sessions on a selected VM
@@ -197,7 +222,7 @@ namespace VMWareChatter {
                WriteLogText(logWriter, e.Message.ToString());
             }
          }
-         return vm != null ? vm.Summary.Runtime.PowerState == VirtualMachinePowerState.poweredOn : false;
+         return vm != null ? vm.Summary.Runtime.PowerState == VMware.Vim.VirtualMachinePowerState.poweredOn : false;
       }
       /// <summary>
       /// Sets a new powerstate
@@ -285,7 +310,7 @@ namespace VMWareChatter {
                string vmName = vm.Name;
                int numConnections = vm.Summary.Runtime.NumMksConnections;
                string cloneTicket = GetCloneTicket();
-               SessionManagerLocalTicket localTicket = null;
+               VMware.Vim.SessionManagerLocalTicket localTicket = null;
                try {
                   localTicket = GetLocalTicket(userName);
                }
@@ -298,14 +323,14 @@ namespace VMWareChatter {
          return LogonInfoDictionary;
       }
       private ServiceInstance GetServiceInctance() {
-         ManagedObjectReference _svcRef = new ManagedObjectReference() { Type = "ServiceInstance", Value = "ServiceInstance" };
+         VMware.Vim.ManagedObjectReference _svcRef = new VMware.Vim.ManagedObjectReference() { Type = "ServiceInstance", Value = "ServiceInstance" };
          ServiceInstance _service = new ServiceInstance(vSphereClient, _svcRef);
          return _service;
       }
       private LicenseManager GetLicenseManager() {
          LicenseManager licenseManager = null;
          try {
-            ServiceContent _sic = GetServiceInctance().RetrieveServiceContent();
+            VMware.Vim.ServiceContent _sic = GetServiceInctance().RetrieveServiceContent();
             licenseManager = (LicenseManager)vSphereClient.GetView(_sic.LicenseManager, null);
          } catch {
             throw;
@@ -315,7 +340,7 @@ namespace VMWareChatter {
       private SessionManager GetSessionManager() {
          SessionManager sessionManager = null;
          try {
-            ServiceContent _sic = GetServiceInctance().RetrieveServiceContent();
+            VMware.Vim.ServiceContent _sic = GetServiceInctance().RetrieveServiceContent();
             sessionManager = (SessionManager)vSphereClient.GetView(_sic.SessionManager, null);
          }
          catch {
@@ -326,7 +351,7 @@ namespace VMWareChatter {
       private AuthorizationManager GetAuthorizationManager() {
          AuthorizationManager authorizationManager = null;
          try {
-            ServiceContent _sic = GetServiceInctance().RetrieveServiceContent();
+            VMware.Vim.ServiceContent _sic = GetServiceInctance().RetrieveServiceContent();
             authorizationManager = (AuthorizationManager)vSphereClient.GetView(_sic.AuthorizationManager, null);
          }
          catch {
@@ -363,9 +388,9 @@ namespace VMWareChatter {
          try {
             Datacenter dataCenter = (Datacenter)vSphereClient.FindEntityView(typeof(Datacenter), null, null, null);
             Folder folder = (Folder)vSphereClient.GetView(dataCenter.HostFolder, null);
-            foreach (ManagedObjectReference mObjR in folder.ChildEntity.Where(x => x.Type == "ComputeResource")) {
+            foreach (VMware.Vim.ManagedObjectReference mObjR in folder.ChildEntity.Where(x => x.Type == "ComputeResource")) {
                ComputeResource computeResource = (ComputeResource)vSphereClient.GetView(mObjR, null);
-               foreach (ManagedObjectReference hostRef in computeResource.Host) {
+               foreach (VMware.Vim.ManagedObjectReference hostRef in computeResource.Host) {
                   hostSystems.Add((HostSystem)vSphereClient.GetView(hostRef, null));
                }
             }
@@ -396,17 +421,17 @@ namespace VMWareChatter {
       public String[] SearchDatastoreForFile(string hostName, string dataStoreName, string path) {
          Datastore ds = this.GetHostDatastore(hostName, dataStoreName);
          HostDatastoreBrowser hdsb = (HostDatastoreBrowser)vSphereClient.GetView(ds.Browser, null);
-         FileQueryFlags fqf = new FileQueryFlags() { FileOwner = false, FileSize = true, FileType = false, Modification = true };
+         VMware.Vim.FileQueryFlags fqf = new VMware.Vim.FileQueryFlags() { FileOwner = false, FileSize = true, FileType = false, Modification = true };
 
-         HostDatastoreBrowserSearchSpec searchSpec = new HostDatastoreBrowserSearchSpec() {
+         VMware.Vim.HostDatastoreBrowserSearchSpec searchSpec = new VMware.Vim.HostDatastoreBrowserSearchSpec() {
             SearchCaseInsensitive = true,
-            Query = new FileQuery[] {
-               new FolderFileQuery() { }
+            Query = new VMware.Vim.FileQuery[] {
+               new VMware.Vim.FolderFileQuery() { }
             },
             Details = fqf,
             SortFoldersFirst = false,
          };
-         HostDatastoreBrowserSearchResults hdbsr = hdsb.SearchDatastore(path, searchSpec);
+         VMware.Vim.HostDatastoreBrowserSearchResults hdbsr = hdsb.SearchDatastore(path, searchSpec);
          return hdbsr.File.AsParallel<VMware.Vim.FileInfo>().Select(file => file.Path).ToArray();
       }
       /// <summary>
@@ -417,7 +442,7 @@ namespace VMWareChatter {
       /// <returns>The datastore we want</returns>
       public Datastore GetHostDatastore(string hostName, string dataStoreName) {
          HostSystem theHost = this.GetHostSystems().Where(host => host.Name == hostName).FirstOrDefault();
-         foreach (ManagedObjectReference mob in theHost.Datastore) {
+         foreach (VMware.Vim.ManagedObjectReference mob in theHost.Datastore) {
             Datastore currentDatastore = (Datastore)vSphereClient.GetView(mob, null);
             if (currentDatastore.Name.ToLower() == dataStoreName.ToLower()) {
                return currentDatastore;
@@ -433,7 +458,7 @@ namespace VMWareChatter {
       public List<Datastore> GetHostDatastores(string hostName) {
          List<Datastore> datastores = new List<Datastore>();
          HostSystem theHost = this.GetHostSystems().Where(host => host.Name == hostName).FirstOrDefault();
-         foreach (ManagedObjectReference mob in theHost.Datastore) {
+         foreach (VMware.Vim.ManagedObjectReference mob in theHost.Datastore) {
             Datastore currentDatastore = (Datastore)vSphereClient.GetView(mob, null);
             datastores.Add(currentDatastore);
          }
@@ -446,12 +471,13 @@ namespace VMWareChatter {
       /// <returns>True or false</returns>
       public bool CheckLicenseFeature(string featureName) {
          try {
-            List<KeyValue> keyValueList = GetLicenseManager().Licenses[0].Properties.Where(x => x.Key == "feature").Select(x => x.Value).ToList().Cast<KeyValue>().ToList().Where(keyValue => keyValue.Value.ToString().ToLower() == featureName.ToLower()).ToList();
+            List<VMware.Vim.KeyValue> keyValueList = GetLicenseManager().Licenses[0].Properties.Where(x => x.Key == "feature").Select(x => x.Value).ToList().Cast<VMware.Vim.KeyValue>().ToList().Where(keyValue => keyValue.Value.ToString().ToLower() == featureName.ToLower()).ToList();
             if (keyValueList != null && keyValueList.Count > 0) {
                return true;
             }
          } catch(VimException ex) {
-            if (ex.MethodFault.GetType() == typeof(NoPermission)) {
+            if (ex.MethodFault.GetType() == typeof(VMware.Vim.NoPermission)) {
+               WriteLogText(logWriter, ex.Message.ToString());
                return false;
                /*
                lock (m_lock) {
@@ -474,9 +500,9 @@ namespace VMWareChatter {
       /// <param name="license">License as string</param>
       /// <returns>True or false, for success or not</returns>
       public bool UpdateLicense(string license) {
-         KeyValue DummyKey = new KeyValue() { Key = "DummyKey", Value = "DummyValue" };
-         KeyValue[] DummyArray = new KeyValue[1] { DummyKey };
-         LicenseManagerLicenseInfo lInfo = GetLicenseManager().UpdateLicense(license, DummyArray);
+         VMware.Vim.KeyValue DummyKey = new VMware.Vim.KeyValue() { Key = "DummyKey", Value = "DummyValue" };
+         VMware.Vim.KeyValue[] DummyArray = new VMware.Vim.KeyValue[1] { DummyKey };
+         VMware.Vim.LicenseManagerLicenseInfo lInfo = GetLicenseManager().UpdateLicense(license, DummyArray);
          if (lInfo == null) return false;
          return lInfo.LicenseKey.ToUpper() == license.ToUpper();
       }
@@ -493,7 +519,7 @@ namespace VMWareChatter {
       /// </summary>
       /// <param name="userName">Username to create a one time ticket for</param>
       /// <returns>One time ticket object</returns>
-      public SessionManagerLocalTicket GetLocalTicket(string userName) {
+      public VMware.Vim.SessionManagerLocalTicket GetLocalTicket(string userName) {
          return GetSessionManager().AcquireLocalTicket(userName);
       }
       /// <summary>
@@ -553,10 +579,144 @@ namespace VMWareChatter {
             }
          }
       }
+      /// <summary>
+      /// Removes a standard port group from a host
+      /// </summary>
+      /// <param name="host"></param>
+      /// <param name="portGroupName"></param>
+      public void RemovePortGroup(VMware.Vim.HostSystem host, string portGroupName) {
+         try { 
+            if (host != null) {
+               VMware.Vim.HostConfigManager configMgr = host.ConfigManager;
+               vimApiAccess.RemovePortGroup(configMgr, portGroupName);
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         } catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+      }
+      /// <summary>
+      /// Creates a standard port group on a host
+      /// </summary>
+      /// <param name="host"></param>
+      /// <param name="portGroupName"></param>
+      /// <param name="vSwitchName"></param>
+      public void CreatePortGroup(VMware.Vim.HostSystem host, string portGroupName, string vSwitchName) {
+         try { 
+            if (host != null) {
+               VMware.Vim.HostConfigManager configMgr = host.ConfigManager;
+               vimApiAccess.CreatePortGroup(configMgr, portGroupName, vSwitchName);
+            }
+         } catch(VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         } catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+      }
+      public void AddNetworkAdapterToVM(string vmName, string networkName) {
+         try { 
+            VirtualMachine vm = this.GetVirtualMachines().Where(_vm => _vm.Name == vmName).FirstOrDefault();
+            if (vm != null) {
+               Network vNic = new Network(vSphereClient, vm.Runtime.Host);
+
+               VirtualDeviceConfigSpec nicSpec = new VirtualDeviceConfigSpec();
+               if (networkName != null) {
+                  nicSpec.Operation = VirtualDeviceConfigSpecOperation.add;
+                  VirtualEthernetCard nic = new VirtualVmxnet();
+                  VirtualEthernetCardNetworkBackingInfo nicBacking = new VirtualEthernetCardNetworkBackingInfo();
+                  nicBacking.Network = vNic.MoRef;
+                  nicBacking.DeviceName = networkName;
+                  nic.AddressType = "generated";
+                  nic.Backing = nicBacking;
+                  nic.Key = 4;
+                  nicSpec.Device = nic;
+               }
+
+               VirtualDeviceConfigSpec[] specs = { nicSpec };
+               VirtualMachineConfigSpec vmConfSpec = new VirtualMachineConfigSpec();
+               vmConfSpec.DeviceChange = specs;
+
+               vm.ReconfigVM_Task(vmConfSpec);
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         } catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+      }
+      public void RemoveNetworkAdapterFromVM(string vmName, string networkName) {
+         try {
+            VirtualMachine vm = this.GetVirtualMachines().Where(_vm => _vm.Name == vmName).FirstOrDefault();
+            if (vm != null) {
+               VirtualMachineConfigSpec vmConfigSpec = new VirtualMachineConfigSpec();
+               VirtualDeviceConfigSpec nicSpec = new VirtualDeviceConfigSpec();
+               VirtualEthernetCard nic = null;
+               VirtualDevice[] nics = vm.Config.Hardware.Device.Where(device => device is VMware.Vim.VirtualEthernetCard).Select(vnic => vnic as VirtualEthernetCard).ToArray();
+               nicSpec.Operation = VirtualDeviceConfigSpecOperation.remove;
+               nic = (VirtualEthernetCard)nics.Where(vnic => vnic.DeviceInfo.Summary.Equals(networkName)).FirstOrDefault();               
+               if (nic != null) {
+                  nicSpec.Device = nic;
+               }
+               VirtualDeviceConfigSpec[] nicSpecArray = { nicSpec };
+               vmConfigSpec.DeviceChange = nicSpecArray;
+               vm.ReconfigVM_Task(vmConfigSpec);
+            }
+         } catch(VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+      }
+      public void ChangeVMNetworkAdapterPortGroup(string vmName, string oldNetworkName, string newNetworkName) {
+         try {
+            VirtualMachine vm = this.GetVirtualMachines().Where(_vm => _vm.Name == vmName).FirstOrDefault();
+            if (vm != null) {
+               VirtualMachineConfigSpec vmConfigSpec = new VirtualMachineConfigSpec();
+               VirtualDeviceConfigSpec nicSpec = new VirtualDeviceConfigSpec();
+               VirtualEthernetCard nic = null;
+               VirtualDevice[] nics = vm.Config.Hardware.Device.Where(device => device is VMware.Vim.VirtualEthernetCard).Select(vnic => vnic as VirtualEthernetCard).ToArray();
+               nicSpec.Operation = VirtualDeviceConfigSpecOperation.edit;
+               nic = (VirtualEthernetCard)nics.Where(vnic => vnic.DeviceInfo.Summary.Equals(oldNetworkName)).FirstOrDefault();
+               
+               VirtualEthernetCardNetworkBackingInfo nicBacking = new VirtualEthernetCardNetworkBackingInfo();
+               Network vNic = new Network(vSphereClient, vm.Runtime.Host);
+               nicBacking.Network = vNic.MoRef;
+               nicBacking.DeviceName = newNetworkName;
+
+               if (nic != null) {
+                  nic.Backing = nicBacking;
+                  nicSpec.Device = nic;
+               }
+               VirtualDeviceConfigSpec[] nicSpecArray = { nicSpec };
+               vmConfigSpec.DeviceChange = nicSpecArray;
+               vm.ReconfigVM_Task(vmConfigSpec);
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+      }
    }
    public class VmrcLogonInfo {
       public string VmkID { get; set; }
-      public SessionManagerLocalTicket LocalTicket { get; set; }
+      public VMware.Vim.SessionManagerLocalTicket LocalTicket { get; set; }
       public string CloneTicket { get; set; }
       public int ConsoleConnections { get; set; }
    }
@@ -593,7 +753,7 @@ namespace VMWareChatter {
       /// </summary>
       public long? FreeSpace { get; set; }
 
-      static public explicit operator GuestDiskInfoWrapper(GuestDiskInfo disk) {
+      static public explicit operator GuestDiskInfoWrapper(VMware.Vim.GuestDiskInfo disk) {
          return new GuestDiskInfoWrapper() { Capacity = disk.Capacity, DiskPath = disk.DiskPath, FreeSpace = disk.FreeSpace };
       }
    }
