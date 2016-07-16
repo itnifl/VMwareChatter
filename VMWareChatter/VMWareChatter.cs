@@ -18,7 +18,7 @@ using Microsoft.Web.Services3;
  *  Requires Vim25Service.dll
  */
 namespace VMWareChatter {
-   public class vCenterCommunicator : IDisposable {
+   public class vCenterCommunicator : IDisposable {    
       VMware.Vim.VimClient vSphereClient = new VMware.Vim.VimClient();
       VMware.Vim.ServiceContent vConnection = null;
       VMware.Vim.UserSession thisSession = null;
@@ -34,6 +34,13 @@ namespace VMWareChatter {
             UriBuilder uri = new UriBuilder(codeBase);
             string path = Uri.UnescapeDataString(uri.Path);
             return Path.GetDirectoryName(path);
+         }
+      }
+      public bool IsConnected {
+         get {
+            if (vConnection == null || thisSession == null)
+               return false;
+            return true;            
          }
       }
       /// <summary>
@@ -401,6 +408,31 @@ namespace VMWareChatter {
          return hostSystems;
       }
       /// <summary>
+      /// Get a list of all hosts filtered by name
+      /// </summary>
+      /// <param name="hostName">name to filter on, do not use wildcards</param>
+      /// <returns>List of all ESXi hosts</returns>
+      public List<HostSystem> GetHostSystems(string hostFilterName) {
+         List<HostSystem> hostSystems = new List<HostSystem>();
+         try {
+            Datacenter dataCenter = (Datacenter)vSphereClient.FindEntityView(typeof(Datacenter), null, null, null);
+            Folder folder = (Folder)vSphereClient.GetView(dataCenter.HostFolder, null);
+            foreach (VMware.Vim.ManagedObjectReference mObjR in folder.ChildEntity.Where(x => x.Type == "ComputeResource")) {
+               ComputeResource computeResource = (ComputeResource)vSphereClient.GetView(mObjR, null);
+               foreach (VMware.Vim.ManagedObjectReference hostRef in computeResource.Host) {
+                  HostSystem hostSystem = (HostSystem)vSphereClient.GetView(hostRef, null);
+                  if(hostSystem.Name.Contains(hostFilterName) || hostSystem.Name.Equals(hostFilterName)) {
+                     hostSystems.Add(hostSystem);
+                  }                  
+               }
+            }
+         }
+         catch {
+            throw;
+         }
+         return hostSystems;
+      }
+      /// <summary>
       /// Downloads a file from a datastore
       /// </summary>
       /// <param name="hostName">Name of host</param>
@@ -408,8 +440,10 @@ namespace VMWareChatter {
       /// <param name="path">[datastore] /folder/file.txt</param>
       public void DownloadDataStoreFile(string hostName, string dataStoreName, string path) {
          throw new NotImplementedException();
-         //Does not download, only moves or copies files within datastore(s)
+         //See
          //https://www.vmware.com/support/developer/vc-sdk/visdk25pubs/ReferenceGuide/vim.FileManager.html
+         //This is possible to implement, see GetVMFiles.cs in Samples2008
+
       }
       /// <summary>
       /// Finds files we search for
@@ -712,6 +746,107 @@ namespace VMWareChatter {
                WriteLogText(logWriter, e.Message.ToString());
             }
          }
+      }
+      /// <summary>
+      /// Gets all port group names that a virtual machine is connected to
+      /// </summary>
+      /// <param name="vmName">The name of the virtual machine to filter on</param>
+      /// <returns></returns>
+      public List<String> GetVMNetworkAdapterPortGroups(string vmName) {
+         List<String> VMNetworkAdapterPortGroups = new List<String>();
+         try {
+            VirtualMachine vm = this.GetVirtualMachines().Where(_vm => _vm.Name == vmName).FirstOrDefault();
+            if (vm != null) {               
+               foreach(VirtualEthernetCard vnic in vm.Config.Hardware.Device.Where(device => device is VMware.Vim.VirtualEthernetCard).Select(vnic => vnic as VirtualEthernetCard).ToArray()) {
+                  VMNetworkAdapterPortGroups.Add(vnic.DeviceInfo.Summary);
+               }               
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         return VMNetworkAdapterPortGroups;
+      }
+      /// <summary>
+      /// Gets all port group names that a virtual machine is connected to
+      /// </summary>
+      /// <param name="vmName">The name of the virtual machine to filter on</param>
+      /// <returns></returns>
+      public List<String> GetHostStandardPortGroups(VMware.Vim.HostSystem host) {
+         List<String> HostPortGroups = new List<String>();
+         try {
+            if (host != null) {
+               foreach(ManagedObjectReference mobj in host.Network) {
+                  Network network = (Network)vSphereClient.GetView(mobj, null);
+                  HostPortGroups.Add(network.Name);
+               }                                       
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }         
+         return HostPortGroups;
+      }
+      public List<String> GetHostVirtualSwitches(VMware.Vim.HostSystem host) {
+         List<String> HostVirtualSwitches = new List<String>();         
+         try {
+            if (host != null) {
+               ManagedObjectReference mobj = host.ConfigManager.NetworkSystem;
+               HostNetworkSystem networkSystem = (HostNetworkSystem)vSphereClient.GetView(mobj, null);
+               foreach (HostVirtualSwitch hvsw in networkSystem.NetworkInfo.Vswitch) {
+                  HostVirtualSwitches.Add(hvsw.Name);
+               }
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         return HostVirtualSwitches;
+      }
+      /// <summary>
+      /// Get all virtual switches of a host that match a filter 
+      /// </summary>
+      /// <param name="host">HostSystem instance object</param>
+      /// <param name="nameFilter">The filter</param>
+      /// <returns></returns>
+      public List<HostVirtualSwitch> GetHostVirtualSwitches(VMware.Vim.HostSystem host, string nameFilter) {
+         List<HostVirtualSwitch> HostVirtualSwitches = new List<HostVirtualSwitch>();
+         try {
+            if (host != null) {
+               ManagedObjectReference mobj = host.ConfigManager.NetworkSystem;
+               HostNetworkSystem networkSystem = (HostNetworkSystem)vSphereClient.GetView(mobj, null);
+               foreach (HostVirtualSwitch hvsw in networkSystem.NetworkInfo.Vswitch.Where(sw => sw.Portgroup.Where(swp => swp.Contains(nameFilter)).Count() > 0)) {
+                  HostVirtualSwitches.Add(hvsw);
+               }
+            }
+         }
+         catch (VimException e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         catch (Exception e) {
+            lock (m_lock) {
+               WriteLogText(logWriter, e.Message.ToString());
+            }
+         }
+         return HostVirtualSwitches;
       }
    }
    public class VmrcLogonInfo {
