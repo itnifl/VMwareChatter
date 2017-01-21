@@ -69,8 +69,8 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>cd /D "$(TargetDir)"
-"D:\Program Files (x86)\Microsoft\ILMerge\ilmerge.exe" /out:VMWareChatterMerged.dll VMware.VimAutomation.Logging.SoapInterceptor.dll VMware.Vim.dll VimService55.XmlSerializers.dll VimService55.dll Microsoft.Web.Services3.dll</PostBuildEvent>
+    <PostBuildEvent>REM cd /D "$(TargetDir)"
+REM "D:\Program Files (x86)\Microsoft\ILMerge\ilmerge.exe" /out:VMWareChatterMerged.dll VMware.VimAutomation.Logging.SoapInterceptor.dll VMware.Vim.dll VimService55.XmlSerializers.dll VimService55.dll Microsoft.Web.Services3.dll</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
